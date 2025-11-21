@@ -1,0 +1,122 @@
+<?xml version="1.0"?>
+<robot name="compact_gantry">
+
+  <material name="blue"><color rgba="0 0.2 0.8 1"/></material>
+  <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+  <material name="silver"><color rgba="0.7 0.7 0.7 1"/></material>
+  <material name="yellow"><color rgba="1.0 0.8 0 1"/></material>
+
+  <link name="bridge_link">
+    <visual>
+      <geometry><box size="1.4 0.2 0.1"/></geometry>
+      <material name="blue"/>
+    </visual>
+    <inertial>
+      <mass value="5.0"/>
+      <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.1" iyz="0" izz="0.1"/>
+    </inertial>
+  </link>
+
+  <link name="carriage">
+    <visual>
+      <geometry><box size="0.2 0.2 0.15"/></geometry>
+      <material name="yellow"/>
+    </visual>
+    <inertial>
+      <mass value="2.0"/>
+      <inertia ixx="0.05" ixy="0" ixz="0" iyy="0.05" iyz="0" izz="0.05"/>
+    </inertial>
+  </link>
+
+  <joint name="slider_y" type="prismatic">
+    <parent link="bridge_link"/>
+    <child link="carriage"/>
+    <limit lower="-0.5" upper="0.5" effort="200" velocity="2.0"/>
+    <axis xyz="1 0 0"/>
+  </joint>
+
+<link name="z_probe">
+    <visual>
+      <geometry><cylinder radius="0.04" length="1.5"/></geometry>
+      <material name="black"/>
+    </visual>
+    <inertial>
+      <mass value="1.0"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+    </inertial>
+  </link>
+
+  <joint name="slider_z" type="prismatic">
+    <parent link="carriage"/>
+    <child link="z_probe"/>
+    <limit lower="-2.0" upper="0.6" effort="200" velocity="2.0"/>
+    <origin xyz="0 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="ee_link">
+    <visual>
+      <geometry><box size="0.40 0.08 0.04"/></geometry>
+      <material name="silver"/>
+    </visual>
+    <inertial>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+    </inertial>
+  </link>
+
+  <joint name="revolute_yaw" type="revolute">
+    <parent link="z_probe"/>
+    <child link="ee_link"/>
+    <origin xyz="0 0 -0.75"/> 
+    <limit lower="-3.14" upper="3.14" effort="20" velocity="2.0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="finger_1">
+    <visual>
+      <geometry><box size="0.02 0.08 0.25"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.02 0.08 0.25"/></geometry>
+    </collision>
+    <inertial> <mass value="0.1"/><inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/> </inertial>
+  </link>
+  
+  <joint name="joint_f1" type="prismatic">
+    <parent link="ee_link"/>
+    <child link="finger_1"/>
+    <origin xyz="0.19 0 -0.125"/>
+    <axis xyz="-1 0 0"/>
+    <limit lower="0.0" upper="0.06" effort="100" velocity="0.5"/>
+  </joint>
+
+  <link name="finger_2">
+    <visual>
+      <geometry><box size="0.02 0.08 0.25"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.02 0.08 0.25"/></geometry>
+    </collision>
+    <inertial> <mass value="0.1"/><inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/> </inertial>
+  </link>
+  
+  <joint name="joint_f2" type="prismatic">
+    <parent link="ee_link"/>
+    <child link="finger_2"/>
+    <origin xyz="-0.19 0 -0.125"/> 
+    <axis xyz="1 0 0"/>
+    <limit lower="0.0" upper="0.06" effort="100" velocity="0.5"/>
+  </joint>
+
+  <link name="world_interface"/>
+  <joint name="slider_x" type="prismatic">
+    <parent link="world_interface"/>
+    <child link="bridge_link"/>
+    <limit lower="-3.0" upper="3.0" effort="200" velocity="2.0"/>
+    <axis xyz="0 1 0"/> 
+  </joint>
+
+</robot>
