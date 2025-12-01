@@ -20,7 +20,7 @@ class GantrySim:
         # 2. Build World
         self._create_env()
         self._spawn_robot()
-        self._spawn_box()
+        self._spawn_mw()
         
         # 3. State Variables
         self.conveyor_speed = 1.5
@@ -73,21 +73,21 @@ class GantrySim:
             
         self.robot_id = p.loadURDF(path, [0, 0, self.robot_base_z], useFixedBase=True)
 
-    def _spawn_box(self):
-        box_dims = [0.15, 0.25, 0.15]
-        box_z = self.belt_surface_z + 0.15
-        vis = p.createVisualShape(p.GEOM_BOX, halfExtents=box_dims, rgbaColor=[0.1, 0.1, 0.1, 1])
-        col = p.createCollisionShape(p.GEOM_BOX, halfExtents=box_dims)
+    def _spawn_mw(self):
+        mw_dims = [0.15, 0.25, 0.15]
+        mw_z = self.belt_surface_z + 0.15
+        vis = p.createVisualShape(p.GEOM_BOX, halfExtents=mw_dims, rgbaColor=[0.1, 0.1, 0.1, 1])
+        col = p.createCollisionShape(p.GEOM_BOX, halfExtents=mw_dims)
         
-        self.box_state = {
+        self.mw_state = {
             'x': -3.5,
             'y': random.uniform(-0.2, 0.25),
             'yaw': random.uniform(-0.7, 0.7),
-            'z': box_z
+            'z': mw_z
         }
         
-        orn = p.getQuaternionFromEuler([0, 0, self.box_state['yaw']])
-        self.box_id = p.createMultiBody(0.5, col, vis, [self.box_state['x'], self.box_state['y'], box_z], orn)
+        orn = p.getQuaternionFromEuler([0, 0, self.mw_state['yaw']])
+        self.mw_id = p.createMultiBody(0.5, col, vis, [self.mw_state['x'], self.mw_state['y'], mw_z], orn)
 
     def step(self, cmd_vel, gripper_cmd):
         # 1. Apply Motor Commands
@@ -110,31 +110,31 @@ class GantrySim:
         # MAGIC GRIP
         if gripper_cmd == "CLOSE" and self.grasp_constraint is None:
             ee_pos = p.getLinkState(self.robot_id, 3)[0]
-            box_pos = p.getBasePositionAndOrientation(self.box_id)[0]
-            if np.linalg.norm(np.array(ee_pos) - np.array(box_pos)) < 0.5:
-                self.grasp_constraint = p.createConstraint(self.robot_id, 3, self.box_id, -1, p.JOINT_FIXED, [0,0,0], [0,0,-0.2], [0,0,0])
+            mw_pos = p.getBasePositionAndOrientation(self.mw_id)[0]
+            if np.linalg.norm(np.array(ee_pos) - np.array(mw_pos)) < 0.5:
+                self.grasp_constraint = p.createConstraint(self.robot_id, 3, self.mw_id, -1, p.JOINT_FIXED, [0,0,0], [0,0,-0.2], [0,0,0])
                 print(">> SIM: Magic Grip Activated")
                 
         elif gripper_cmd == "OPEN" and self.grasp_constraint is not None:
             p.removeConstraint(self.grasp_constraint)
             self.grasp_constraint = None
             print(">> SIM: Released")
-            pos, orn = p.getBasePositionAndOrientation(self.box_id)
-            self.box_state['x'] = pos[0] 
-            self.box_state['y'] = pos[1]
-            self.box_state['yaw'] = 0.0
+            pos, orn = p.getBasePositionAndOrientation(self.mw_id)
+            self.mw_state['x'] = pos[0] 
+            self.mw_state['y'] = pos[1]
+            self.mw_state['yaw'] = 0.0
             
         # CONVEYOR
         if self.grasp_constraint is None:
-            self.box_state['x'] += self.conveyor_speed * self.dt
-            if self.box_state['x'] > 5.0:
-                self.box_state['x'] = -2.5
-                self.box_state['y'] = random.uniform(-0.25, 0.25)
-                self.box_state['yaw'] = random.uniform(-0.7, 0.7)
-                print(f">> SIM: New Box Spawned | X: {self.box_state['x']:.2f}")
+            self.mw_state['x'] += self.conveyor_speed * self.dt
+            if self.mw_state['x'] > 5.0:
+                self.mw_state['x'] = -2.5
+                self.mw_state['y'] = random.uniform(-0.25, 0.25)
+                self.mw_state['yaw'] = random.uniform(-0.7, 0.7)
+                print(f">> SIM: New MW Spawned | X: {self.mw_state['x']:.2f}")
 
-            orn = p.getQuaternionFromEuler([0, 0, self.box_state['yaw']])
-            p.resetBasePositionAndOrientation(self.box_id, [self.box_state['x'], self.box_state['y'], self.box_state['z']], orn)
+            orn = p.getQuaternionFromEuler([0, 0, self.mw_state['yaw']])
+            p.resetBasePositionAndOrientation(self.mw_id, [self.mw_state['x'], self.mw_state['y'], self.mw_state['z']], orn)
 
     def get_data(self):
         # Camera
@@ -154,8 +154,8 @@ class GantrySim:
         joints = [p.getJointState(self.robot_id, i)[0] for i in range(4)]
         
         # Cheat Data
-        box_pos, box_orn = p.getBasePositionAndOrientation(self.box_id)
-        box_yaw = p.getEulerFromQuaternion(box_orn)[2]
-        cheat_data = {'box_x': box_pos[0], 'box_y': box_pos[1], 'box_yaw': box_yaw}
+        mw_pos, mw_orn = p.getBasePositionAndOrientation(self.mw_id)
+        mw_yaw = p.getEulerFromQuaternion(mw_orn)[2]
+        cheat_data = {'mw_x': mw_pos[0], 'mw_y': mw_pos[1], 'mw_yaw': mw_yaw}
         
         return img, joints, cheat_data
