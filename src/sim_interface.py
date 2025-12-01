@@ -28,26 +28,39 @@ class GantrySim:
         self.dt = 1.0/240.0
 
     def _create_env(self):
-        # Load Plane (Uses built-in pybullet_data)
+        # Load Plane
         p.loadURDF("plane.urdf")
 
-        # Conveyor Table
-        belt_h, belt_l = 0.2, 10.0
-        belt_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.4, belt_l/2, belt_h/2], rgbaColor=[0, 0.1, 0.5, 1])
-        belt_col = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.4, belt_l/2, belt_h/2])
+        # 1. Conveyor Table (Long along X)
+        # Dimensions: [Length/2 (X), Width/2 (Y), Height/2 (Z)]
+        belt_h = 0.2
+        belt_l = 10.0 # Total length 10m
+        belt_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[belt_l/2, 0.4, belt_h/2], rgbaColor=[0, 0.2, 0.8, 1])
+        belt_col = p.createCollisionShape(p.GEOM_BOX, halfExtents=[belt_l/2, 0.4, belt_h/2])
         p.createMultiBody(0, belt_col, belt_visual, [0.0, 0, belt_h/2])
         self.belt_surface_z = belt_h
 
-        # Static Frame (Compact 1.4m)
-        beam_h, rail_l = 1.4, 4.2
-        leg_shape = p.createVisualShape(p.GEOM_CYLINDER, radius=0.06, length=beam_h, rgbaColor=[0.5, 0.5, 0.5, 1])
-        rail_shape = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.05, rail_l/2, 0.05], rgbaColor=[0.4, 0.4, 0.4, 1])
+        # 2. Static Frame (Aligned with X-Axis)
+        beam_h = 1.4
+        rail_l = 4.2 # Rail length 4.2m
         
-        offset_x = 0.6
-        for x in [-offset_x, offset_x]:
-            for y in [-2.0, 2.0]:
-                p.createMultiBody(baseVisualShapeIndex=leg_shape, basePosition=[x, y, beam_h/2])
-            p.createMultiBody(baseVisualShapeIndex=rail_shape, basePosition=[x, 0, beam_h + 0.05])
+        # Shapes
+        leg_shape = p.createVisualShape(p.GEOM_CYLINDER, radius=0.06, length=beam_h, rgbaColor=[0.5, 0.5, 0.5, 1])
+        # Rail: Long in X [2.1, 0.05, 0.05]
+        rail_shape = p.createVisualShape(p.GEOM_BOX, halfExtents=[rail_l/2, 0.05, 0.05], rgbaColor=[0.4, 0.4, 0.4, 1])
+        
+        # Frame Dimensions
+        frame_width_y = 0.7  # Distance from center to side rail (Y)
+        leg_spacing_x = 2.0  # Distance from center to leg (X)
+        
+        # Build the two sides of the frame
+        for y_side in [-frame_width_y, frame_width_y]: 
+            # A. Create the Long Rail running along X at this Y position
+            p.createMultiBody(baseVisualShapeIndex=rail_shape, basePosition=[0, y_side, beam_h + 0.05])
+            
+            # B. Create the two Legs supporting this rail (Front and Back in X)
+            for x_pos in [-leg_spacing_x, leg_spacing_x]:
+                p.createMultiBody(baseVisualShapeIndex=leg_shape, basePosition=[x_pos, y_side, beam_h/2])
             
         self.robot_base_z = beam_h + 0.15
 
@@ -61,14 +74,14 @@ class GantrySim:
         self.robot_id = p.loadURDF(path, [0, 0, self.robot_base_z], useFixedBase=True)
 
     def _spawn_box(self):
-        box_dims = [0.15, 0.15, 0.15]
+        box_dims = [0.15, 0.25, 0.15]
         box_z = self.belt_surface_z + 0.15
         vis = p.createVisualShape(p.GEOM_BOX, halfExtents=box_dims, rgbaColor=[0.1, 0.1, 0.1, 1])
         col = p.createCollisionShape(p.GEOM_BOX, halfExtents=box_dims)
         
         self.box_state = {
-            'y': -2.5,
-            'x': random.uniform(-0.25, 0.25),
+            'x': -3.5,
+            'y': random.uniform(-0.2, 0.25),
             'yaw': random.uniform(-0.7, 0.7),
             'z': box_z
         }
@@ -107,16 +120,16 @@ class GantrySim:
             self.grasp_constraint = None
             print(">> SIM: Released")
             pos, orn = p.getBasePositionAndOrientation(self.box_id)
-            self.box_state['x'] = 0.0 
+            self.box_state['x'] = pos[0] 
             self.box_state['y'] = pos[1]
             self.box_state['yaw'] = 0.0
             
         # CONVEYOR
         if self.grasp_constraint is None:
-            self.box_state['y'] += self.conveyor_speed * self.dt
-            if self.box_state['y'] > 5.0:
-                self.box_state['y'] = -2.5
-                self.box_state['x'] = random.uniform(-0.25, 0.25)
+            self.box_state['x'] += self.conveyor_speed * self.dt
+            if self.box_state['x'] > 5.0:
+                self.box_state['x'] = -2.5
+                self.box_state['y'] = random.uniform(-0.25, 0.25)
                 self.box_state['yaw'] = random.uniform(-0.7, 0.7)
                 print(f">> SIM: New Box Spawned | X: {self.box_state['x']:.2f}")
 

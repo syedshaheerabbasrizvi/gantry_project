@@ -8,7 +8,7 @@
 
   <link name="bridge_link">
     <visual>
-      <geometry><box size="1.4 0.2 0.1"/></geometry>
+      <geometry><box size="0.2 1.4 0.1"/></geometry>
       <material name="blue"/>
     </visual>
     <inertial>
@@ -32,7 +32,7 @@
     <parent link="bridge_link"/>
     <child link="carriage"/>
     <limit lower="-0.5" upper="0.5" effort="200" velocity="2.0"/>
-    <axis xyz="1 0 0"/>
+    <axis xyz="0 1 0"/>
   </joint>
 
 <link name="z_probe">
@@ -116,7 +116,7 @@
     <parent link="world_interface"/>
     <child link="bridge_link"/>
     <limit lower="-3.0" upper="3.0" effort="200" velocity="2.0"/>
-    <axis xyz="0 1 0"/> 
+    <axis xyz="1 0 0"/> 
   </joint>
 
 </robot>

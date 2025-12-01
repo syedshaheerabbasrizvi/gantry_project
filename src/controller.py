@@ -6,7 +6,7 @@ class GantryController:
         self.state = "IDLE"
         
         # Config
-        self.home_y = -1.8
+        self.home_x = -1.8
         self.rail_limit = 2.0
         self.conveyor_speed = 1.5
         
@@ -36,20 +36,20 @@ class GantryController:
         """
         # 1. Perception
         box_x, box_y, box_yaw = self.process_vision(img, cheat_data)
-        j_y, j_x, j_z, j_yaw = joints
+        j_x, j_y, j_z, j_yaw = joints
         
         # 2. Init Outputs
-        vy, vx, vz, vyaw = 0, 0, 0, 0
+        vx, vy, vz, vyaw = 0, 0, 0, 0
         gripper = "OPEN"
 
         # 3. Logic
         if self.state == "IDLE":
-            vy = self.kp * (self.home_y - j_y)
-            vx = self.kp * (0.0 - j_x)
+            vy = self.kp * (0.0 - j_y)
+            vx = self.kp * (self.home_x - j_x)
             vz = self.kp * (0.6 - j_z) # Home High (0.6 limit)
             vyaw = self.kp_rot * (0.0 - j_yaw)
             
-            if box_y > -2.0 and box_y < -1.0:
+            if box_x > -2.0 and box_x < -1.0:
                 self.state = "TRACKING"
                 self.target_yaw = box_yaw
 
@@ -57,8 +57,8 @@ class GantryController:
             # Clamp Y to rails
             safe_y = max(-self.rail_limit, min(self.rail_limit, box_y))
             
-            vy = self.kp * (safe_y - j_y) + self.conveyor_speed
-            vx = self.kp * (box_x - j_x)
+            vy = self.kp * (safe_y - j_y) 
+            vx = self.kp * (box_x - j_x) + self.conveyor_speed
             vyaw = self.kp_rot * (self.target_yaw - j_yaw)
             
             # Check Alignment (Pos + Rot)
@@ -68,8 +68,8 @@ class GantryController:
         elif self.state == "DESCEND":
             safe_y = max(-self.rail_limit, min(self.rail_limit, box_y))
             
-            vy = self.kp * (safe_y - j_y) + self.conveyor_speed
-            vx = self.kp * (box_x - j_x)
+            vy = self.kp * (safe_y - j_y) 
+            vx = self.kp * (box_x - j_x)+ self.conveyor_speed
             vyaw = self.kp_rot * (self.target_yaw - j_yaw)
             
             target_z = -0.25
@@ -79,8 +79,8 @@ class GantryController:
                 self.state = "GRASP"
                 
         elif self.state == "GRASP":
-            vy = self.kp * (box_y - j_y) + self.conveyor_speed
-            vx = self.kp * (box_x - j_x)
+            vy = self.kp * (box_y - j_y) 
+            vx = self.kp * (box_x - j_x) + self.conveyor_speed
             vyaw = self.kp_rot * (self.target_yaw - j_yaw)
             vz = 0
             gripper = "CLOSE"
@@ -88,7 +88,7 @@ class GantryController:
             self.state = "RETRACT"
 
         elif self.state == "RETRACT":
-            vy = 0.0 # Stop tracking conveyor
+            vx = 0.0 # Stop tracking conveyor
             vz = self.kp * (0.0 - j_z)
             vyaw = self.kp_rot * (self.target_yaw - j_yaw)
             gripper = "CLOSE"
@@ -97,13 +97,13 @@ class GantryController:
                 self.state = "CARRY"
 
         elif self.state == "CARRY":
-            vy = self.kp * (2.0 - j_y) # End of line
-            vx = self.kp * (0.0 - j_x) # Center X
+            vx = self.kp * (2.0 - j_x) # End of line
+            vy = self.kp * (0.0 - j_y) # Center X
             vyaw = self.kp_rot * (0.0 - j_yaw) # Straighten Yaw
             vz = self.kp * (0.0 - j_z)
             gripper = "CLOSE"
             
-            if abs(2.0 - j_y) < 0.1:
+            if abs(2.0 - j_x) < 0.1:
                 self.state = "RELEASE"
 
         elif self.state == "RELEASE":
@@ -113,4 +113,4 @@ class GantryController:
             self.state = "IDLE"
             print(">> CONTROLLER: Cycle Complete")
 
-        return [vy, vx, vz, vyaw], gripper
+        return [vx, vy, vz, vyaw], gripper
