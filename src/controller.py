@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 class GantryController:
     def __init__(self):
@@ -8,25 +9,72 @@ class GantryController:
         # Config
         self.home_x = -1.8
         self.rail_limit = 2.0
-        self.conveyor_speed = 1.5
+        self.conveyor_speed = 1.0
         
-        # Gains
-        self.kp = 10.0
-        self.kp_rot = 7.0
+        # MOTION PROFILING CONFIG (S-Curve)
+        self.max_accel = 4.0      
+        self.max_accel_rot = 10.0 
+        self.max_jerk = 50.0      
+        self.max_jerk_rot = 100.0 
+        
+        # GAINS (PD Control)
+        self.kp = 7.5      # Gas Pedal
+        self.kd = 0.5       # Brake Pedal (Shock Absorber)
+        
+        self.kp_rot = 5.0
+        self.kd_rot = 0.2
         
         # Memory
         self.target_yaw = 0.0
+        
+        # Memory for PD Control (Derivative Term)
+        self.prev_error_x = 0.0
+        self.prev_error_y = 0.0
+        self.prev_error_z = 0.0
+        self.prev_error_yaw = 0.0
+        
+        # Ramper State
+        self.last_time = time.time()
+        self.current_vel = np.array([0.0, 0.0, 0.0, 0.0]) 
+        self.current_accel = np.array([0.0, 0.0, 0.0, 0.0])
     
+    def _ramp_scurve(self, v_target, v_curr, a_curr, max_a, max_j, dt):
+        """
+        Generates S-Curve profile by limiting Jerk (da/dt) and Accel (dv/dt).
+        """
+        if dt <= 0.0: return v_curr, a_curr
+
+        # 1. Ideal Accel
+        a_req = (v_target - v_curr) / dt
+        
+        # 2. Hard Limit Accel
+        if abs(a_req) > max_a:
+            a_req = np.sign(a_req) * max_a
+            
+        # 3. Limit Jerk
+        jerk_req = (a_req - a_curr) / dt
+        
+        if abs(jerk_req) > max_j:
+            jerk_effective = np.sign(jerk_req) * max_j
+        else:
+            jerk_effective = jerk_req
+            
+        # 4. Integrate
+        a_next = a_curr + (jerk_effective * dt)
+        
+        if abs(a_next) > max_a:
+            a_next = np.sign(a_next) * max_a
+            
+        v_next = v_curr + (a_next * dt)
+        return v_next, a_next
+
     def update(self, img, joints, cheat_data):
-        """
-        Inputs: 
-            img: Camera image
-            joints: [y, x, z, yaw]
-            cheat_data: Ground truth dictionary
-        Returns: 
-            cmd_vel: [vy, vx, vz, vyaw]
-            gripper_cmd: "OPEN" or "CLOSE"
-        """
+        # 0. Time Delta
+        now = time.time()
+        dt = now - self.last_time
+        self.last_time = now
+        if dt > 0.1 or dt <= 0.0: dt = 0.0 
+
         # 1. Perception
         mw_x = cheat_data['mw_x']
         mw_y = cheat_data['mw_y']
@@ -36,100 +84,153 @@ class GantryController:
         box_yaw = cheat_data['box_yaw']
         j_x, j_y, j_z, j_yaw = joints
         
-        # 2. Init Outputs
-        vx, vy, vz, vyaw = 0, 0, 0, 0
+        # 2. Define Targets (State Machine sets these)
+        # Default to holding current position
+        t_x, t_y, t_z, t_yaw = j_x, j_y, j_z, j_yaw
+        ff_vx = 0.0 # Feedforward Velocity
         gripper = "OPEN"
 
-        # 3. Logic
+        # --- LOGIC START ---
         if self.state == "IDLE":
-            vy = self.kp * (0.0 - j_y)
-            vx = self.kp * (self.home_x - j_x)
-            vz = self.kp * (0.6 - j_z) # Home High (0.6 limit)
-            vyaw = self.kp_rot * (0.0 - j_yaw)
+            t_y = 0.0
+            t_x = self.home_x
+            t_z = 0.6 
+            t_yaw = 0.0
             
             if mw_x > -2.0 and mw_x < -1.0:
                 self.state = "TRACKING"
                 self.target_yaw = mw_yaw
 
         elif self.state == "TRACKING":
-            # Clamp Y to rails
-            safe_y = max(-self.rail_limit, min(self.rail_limit, mw_y))
+            t_y = max(-self.rail_limit, min(self.rail_limit, mw_y))
+            t_x = mw_x
+            t_yaw = self.target_yaw
+            ff_vx = self.conveyor_speed # Critical for tracking!
             
-            vy = self.kp * (safe_y - j_y) 
-            vx = self.kp * (mw_x - j_x) + self.conveyor_speed
-            vyaw = self.kp_rot * (self.target_yaw - j_yaw)
-            
-            # Check Alignment (Pos + Rot)
             if abs(mw_y - j_y) < 0.05 and abs(mw_x - j_x) < 0.02 and abs(self.target_yaw - j_yaw) < 0.1:
                 self.state = "DESCEND"
 
         elif self.state == "DESCEND":
-            safe_y = max(-self.rail_limit, min(self.rail_limit, mw_y))
+            t_y = max(-self.rail_limit, min(self.rail_limit, mw_y))
+            t_x = mw_x
+            t_yaw = self.target_yaw
+            ff_vx = self.conveyor_speed
+            t_z = -0.20 # Tuned height
             
-            vy = self.kp * (safe_y - j_y) 
-            vx = self.kp * (mw_x - j_x)+ self.conveyor_speed
-            vyaw = self.kp_rot * (self.target_yaw - j_yaw)
-            
-            target_z = -0.25
-            vz = self.kp * (target_z - j_z)
-            
-            if abs(target_z - j_z) < 0.02:
+            if abs(t_z - j_z) < 0.02:
                 self.state = "GRASP"
                 
         elif self.state == "GRASP":
-            vy = self.kp * (mw_y - j_y) 
-            vx = self.kp * (mw_x - j_x) + self.conveyor_speed
-            vyaw = self.kp_rot * (self.target_yaw - j_yaw)
-            vz = 0
+            t_y = mw_y
+            t_x = mw_x
+            t_yaw = self.target_yaw
+            ff_vx = self.conveyor_speed
+            t_z = j_z # Hold height
             gripper = "CLOSE"
-            
             self.state = "RETRACT"
 
         elif self.state == "RETRACT":
-            vx = 0.0 # Stop tracking conveyor
-            vz = self.kp * (0.5 - j_z)
-            vyaw = self.kp_rot * (self.target_yaw - j_yaw)
+            t_x = j_x # Don't fight X position, just apply FF
+            ff_vx = self.conveyor_speed 
+            t_z = 0.5
+            t_yaw = self.target_yaw
             gripper = "CLOSE"
             
-            # Wait for clearance height
             if j_z > 0.45:
                 self.state = "APPROACH_BOX"
 
         elif self.state == "APPROACH_BOX":
-            # CHANGE: Hover over the moving box
-            vx = self.kp * (box_x - j_x) + self.conveyor_speed
-            vy = self.kp * (box_y - j_y)
-            vyaw = self.kp_rot * (box_yaw - j_yaw) # Match box rotation
-            vz = self.kp * (0.5 - j_z) # Stay high
+            t_x = box_x
+            t_y = box_y
+            t_yaw = box_yaw
+            ff_vx = self.conveyor_speed
+            t_z = 0.5
             gripper = "CLOSE"
             
-            # Check alignment with box
             if abs(box_x - j_x) < 0.05 and abs(box_y - j_y) < 0.05 and abs(box_yaw - j_yaw) < 0.1:
                 self.state = "INSERT"
 
         elif self.state == "INSERT":
-            # CHANGE: Lower into box while tracking
-            vx = self.kp * (box_x - j_x) + self.conveyor_speed
-            vy = self.kp * (box_y - j_y)
-            vyaw = self.kp_rot * (box_yaw - j_yaw)
-            
-            # Target Z=0.0 places it inside the box
-            target_z = 0.0 
-            vz = self.kp * (target_z - j_z)
+            t_x = box_x
+            t_y = box_y
+            t_yaw = box_yaw
+            ff_vx = self.conveyor_speed
+            t_z = -0.10 # Tuned drop height
             gripper = "CLOSE"
             
-            if abs(target_z - j_z) < 0.05:
+            if abs(t_z - j_z) < 0.05:
                 self.state = "RELEASE_IN_BOX"
 
         elif self.state == "RELEASE_IN_BOX":
-            # CHANGE: Release and drift
-            vx = self.conveyor_speed
-            vy = 0; vz = 0; vyaw = 0
+            # 1. Open Gripper
+            t_x = box_x
+            t_y = box_y
+            t_yaw = box_yaw
+            # Stay down (-0.10) for one cycle to ensure fingers clear the handle/object
+            t_z = -0.10 
+            ff_vx = self.conveyor_speed
             gripper = "OPEN"
             
-            # Simple 1-step exit or add a timer if needed
-            self.target_yaw = 0.0
-            self.state = "IDLE"
-            print(">> CONTROLLER: Box Packed!")
+            # Move to clearance phase
+            self.state = "CLEAR_BOX"
+
+        elif self.state == "CLEAR_BOX":
+            # 2. Go Up (Z) while tracking Forward (X)
+            # We track box_x to move "vertically" relative to the moving box
+            t_x = box_x 
+            t_y = box_y
+            # Maintain yaw so we don't rotate into the box walls while lifting
+            t_yaw = box_yaw 
+            ff_vx = self.conveyor_speed
+            
+            t_z = 0.6 # Target: Safe High Position
+            gripper = "OPEN"
+            
+            # Check if we are high enough to go home safely
+            if abs(t_z - j_z) < 0.05:
+                self.target_yaw = 0.0 # Reset Yaw for homing
+                self.state = "IDLE"
+                print(">> CONTROLLER: Box Packed & Cleared!")
+        # --- LOGIC END ---
+
+        # 3. PD CONTROL CALCULATION
+        # Calculate Errors
+        err_x = t_x - j_x
+        err_y = t_y - j_y
+        err_z = t_z - j_z
+        err_yaw = t_yaw - j_yaw
+        
+        # Calculate Derivatives (dE/dt)
+        if dt > 0:
+            d_x = (err_x - self.prev_error_x) / dt
+            d_y = (err_y - self.prev_error_y) / dt
+            d_z = (err_z - self.prev_error_z) / dt
+            d_yaw = (err_yaw - self.prev_error_yaw) / dt
+        else:
+            d_x = d_y = d_z = d_yaw = 0.0
+
+        # Save for next loop
+        self.prev_error_x = err_x
+        self.prev_error_y = err_y
+        self.prev_error_z = err_z
+        self.prev_error_yaw = err_yaw
+        
+        # Calculate Raw Velocity (P + D + FF)
+        vx_req = (self.kp * err_x) + (self.kd * d_x) + ff_vx
+        vy_req = (self.kp * err_y) + (self.kd * d_y)
+        vz_req = (self.kp * err_z) + (self.kd * d_z)
+        vyaw_req = (self.kp_rot * err_yaw) + (self.kd_rot * d_yaw)
+
+        # 4. S-Curve Profiling (Ramp the Raw Commands)
+        vx_cur, vy_cur, vz_cur, vyaw_cur = self.current_vel
+        ax_cur, ay_cur, az_cur, ayaw_cur = self.current_accel
+        
+        vx, ax = self._ramp_scurve(vx_req, vx_cur, ax_cur, self.max_accel, self.max_jerk, dt)
+        vy, ay = self._ramp_scurve(vy_req, vy_cur, ay_cur, self.max_accel, self.max_jerk, dt)
+        vz, az = self._ramp_scurve(vz_req, vz_cur, az_cur, self.max_accel, self.max_jerk, dt)
+        vyaw, ayaw = self._ramp_scurve(vyaw_req, vyaw_cur, ayaw_cur, self.max_accel_rot, self.max_jerk_rot, dt)
+        
+        self.current_vel = np.array([vx, vy, vz, vyaw])
+        self.current_accel = np.array([ax, ay, az, ayaw])
 
         return [vx, vy, vz, vyaw], gripper

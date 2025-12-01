@@ -23,7 +23,7 @@ class GantrySim:
         self._spawn_objects()
         
         # 3. State Variables
-        self.conveyor_speed = 1.5
+        self.conveyor_speed = 1.0
         self.grasp_constraint = None
         self.grasped_body = None  # Track which ID is held
         self.dt = 1.0/240.0
