@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<robot name="cardboard_box">
+  <material name="brown"><color rgba="0.76 0.6 0.42 1"/></material>
+  
+  <link name="base_bottom">
+    <visual><geometry><box size="0.55 0.8 0.02"/></geometry><material name="brown"/></visual>
+    <collision><geometry><box size="0.55 0.8 0.02"/></geometry></collision>
+    <inertial><mass value="0.5"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial>
+  </link>
+
+  <link name="wall_front">
+    <visual><geometry><box size="0.02 0.8 0.35"/></geometry><material name="brown"/></visual>
+    <collision><geometry><box size="0.02 0.8 0.35"/></geometry></collision>
+    <inertial><mass value="0.1"/><inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/></inertial>
+  </link>
+  <joint name="j_front" type="fixed"><parent link="base_bottom"/><child link="wall_front"/><origin xyz="0.265 0 0.175"/></joint>
+
+  <link name="wall_back">
+    <visual><geometry><box size="0.02 0.8 0.35"/></geometry><material name="brown"/></visual>
+    <collision><geometry><box size="0.02 0.8 0.35"/></geometry></collision>
+    <inertial><mass value="0.1"/><inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/></inertial>
+  </link>
+  <joint name="j_back" type="fixed"><parent link="base_bottom"/><child link="wall_back"/><origin xyz="-0.265 0 0.175"/></joint>
+
+  <link name="wall_left">
+    <visual><geometry><box size="0.55 0.02 0.35"/></geometry><material name="brown"/></visual>
+    <collision><geometry><box size="0.55 0.02 0.35"/></geometry></collision>
+    <inertial><mass value="0.1"/><inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/></inertial>
+  </link>
+  <joint name="j_left" type="fixed"><parent link="base_bottom"/><child link="wall_left"/><origin xyz="0 0.39 0.175"/></joint>
+
+  <link name="wall_right">
+    <visual><geometry><box size="0.55 0.02 0.35"/></geometry><material name="brown"/></visual>
+    <collision><geometry><box size="0.55 0.02 0.35"/></geometry></collision>
+    <inertial><mass value="0.1"/><inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/></inertial>
+  </link>
+  <joint name="j_right" type="fixed"><parent link="base_bottom"/><child link="wall_right"/><origin xyz="0 -0.39 0.175"/></joint>
+
+  <link name="flap_front"><visual><geometry><box size="0.02 0.8 0.15"/></geometry><material name="brown"/></visual><collision><geometry><box size="0.02 0.8 0.15"/></geometry></collision><inertial><mass value="0.05"/><inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/></inertial></link>
+  <joint name="j_flap_f" type="fixed"><parent link="wall_front"/><child link="flap_front"/><origin xyz="0.02 0 0.25" rpy="0 0.4 0"/></joint>
+
+  <link name="flap_back"><visual><geometry><box size="0.02 0.8 0.15"/></geometry><material name="brown"/></visual><collision><geometry><box size="0.02 0.8 0.15"/></geometry></collision><inertial><mass value="0.05"/><inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/></inertial></link>
+  <joint name="j_flap_b" type="fixed"><parent link="wall_back"/><child link="flap_back"/><origin xyz="-0.02 0 0.25" rpy="0 -0.4 0"/></joint>
+  
+  <link name="flap_left"><visual><geometry><box size="0.55 0.02 0.15"/></geometry><material name="brown"/></visual><collision><geometry><box size="0.55 0.02 0.15"/></geometry></collision><inertial><mass value="0.05"/><inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/></inertial></link>
+  <joint name="j_flap_l" type="fixed"><parent link="wall_left"/><child link="flap_left"/><origin xyz="0 0.02 0.25" rpy="-0.4 0 0"/></joint>
+  
+  <link name="flap_right"><visual><geometry><box size="0.55 0.02 0.15"/></geometry><material name="brown"/></visual><collision><geometry><box size="0.55 0.02 0.15"/></geometry></collision><inertial><mass value="0.05"/><inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/></inertial></link>
+  <joint name="j_flap_r" type="fixed"><parent link="wall_right"/><child link="flap_right"/><origin xyz="0 -0.02 0.25" rpy="0.4 0 0"/></joint>
+</robot>

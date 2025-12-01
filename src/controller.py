@@ -11,19 +11,12 @@ class GantryController:
         self.conveyor_speed = 1.5
         
         # Gains
-        self.kp = 8.0
-        self.kp_rot = 5.0
+        self.kp = 10.0
+        self.kp_rot = 7.0
         
         # Memory
         self.target_yaw = 0.0
     
-    def process_vision(self, img, cheat_data):
-        """
-        TODO: PARTNER WILL IMPLEMENT OPENCV HERE.
-        For now, returns Ground Truth from simulation.
-        """
-        return cheat_data['mw_x'], cheat_data['mw_y'], cheat_data['mw_yaw']
-
     def update(self, img, joints, cheat_data):
         """
         Inputs: 
@@ -35,7 +28,12 @@ class GantryController:
             gripper_cmd: "OPEN" or "CLOSE"
         """
         # 1. Perception
-        mw_x, mw_y, mw_yaw = self.process_vision(img, cheat_data)
+        mw_x = cheat_data['mw_x']
+        mw_y = cheat_data['mw_y']
+        mw_yaw = cheat_data['mw_yaw']
+        box_x = cheat_data['box_x']
+        box_y = cheat_data['box_y']
+        box_yaw = cheat_data['box_yaw']
         j_x, j_y, j_z, j_yaw = joints
         
         # 2. Init Outputs
@@ -89,28 +87,49 @@ class GantryController:
 
         elif self.state == "RETRACT":
             vx = 0.0 # Stop tracking conveyor
-            vz = self.kp * (0.0 - j_z)
+            vz = self.kp * (0.5 - j_z)
             vyaw = self.kp_rot * (self.target_yaw - j_yaw)
             gripper = "CLOSE"
             
-            if j_z > -0.1:
-                self.state = "CARRY"
+            # Wait for clearance height
+            if j_z > 0.45:
+                self.state = "APPROACH_BOX"
 
-        elif self.state == "CARRY":
-            vx = self.kp * (2.0 - j_x) # End of line
-            vy = self.kp * (0.0 - j_y) # Center X
-            vyaw = self.kp_rot * (0.0 - j_yaw) # Straighten Yaw
-            vz = self.kp * (0.0 - j_z)
+        elif self.state == "APPROACH_BOX":
+            # CHANGE: Hover over the moving box
+            vx = self.kp * (box_x - j_x) + self.conveyor_speed
+            vy = self.kp * (box_y - j_y)
+            vyaw = self.kp_rot * (box_yaw - j_yaw) # Match box rotation
+            vz = self.kp * (0.5 - j_z) # Stay high
             gripper = "CLOSE"
             
-            if abs(2.0 - j_x) < 0.1:
-                self.state = "RELEASE"
+            # Check alignment with box
+            if abs(box_x - j_x) < 0.05 and abs(box_y - j_y) < 0.05 and abs(box_yaw - j_yaw) < 0.1:
+                self.state = "INSERT"
 
-        elif self.state == "RELEASE":
+        elif self.state == "INSERT":
+            # CHANGE: Lower into box while tracking
+            vx = self.kp * (box_x - j_x) + self.conveyor_speed
+            vy = self.kp * (box_y - j_y)
+            vyaw = self.kp_rot * (box_yaw - j_yaw)
+            
+            # Target Z=0.0 places it inside the box
+            target_z = 0.0 
+            vz = self.kp * (target_z - j_z)
+            gripper = "CLOSE"
+            
+            if abs(target_z - j_z) < 0.05:
+                self.state = "RELEASE_IN_BOX"
+
+        elif self.state == "RELEASE_IN_BOX":
+            # CHANGE: Release and drift
+            vx = self.conveyor_speed
+            vy = 0; vz = 0; vyaw = 0
             gripper = "OPEN"
-            # Reset logic
+            
+            # Simple 1-step exit or add a timer if needed
             self.target_yaw = 0.0
             self.state = "IDLE"
-            print(">> CONTROLLER: Cycle Complete")
+            print(">> CONTROLLER: Box Packed!")
 
         return [vx, vy, vz, vyaw], gripper
