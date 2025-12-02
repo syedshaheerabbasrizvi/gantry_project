@@ -119,4 +119,49 @@
     <axis xyz="0 1 0"/> 
   </joint>
 
+    <!-- Wrist camera body -->
+  <link name="wrist_cam">
+    <visual>
+      <!-- small camera box -->
+      <geometry><box size="0.06 0.04 0.04"/></geometry>
+      <material name="black"/>
+    </visual>
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0" 
+               iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="wrist_cam_fixed" type="fixed">
+    <parent link="ee_link"/>
+    <child link="wrist_cam"/>
+    <!-- Position camera slightly in front and below EE -->
+    <origin xyz="0.0 0.0 -0.08" rpy="0 0 0"/>
+  </joint>
+
+    <!-- Overhead camera mounted on bridge -->
+  <link name="bridge_cam">
+    <visual>
+      <geometry>
+        <box size="0.08 0.04 0.04"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0"
+               iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="bridge_cam_fixed" type="fixed">
+    <parent link="bridge_link"/>
+    <child link="bridge_cam"/>
+    <!-- Tune xyz to place it nicely -->
+    <!-- Example: slightly centered and above the conveyor -->
+    <origin xyz="-0.1 0.0 0.0" rpy="0 0 0"/>
+  </joint>
+
+
 </robot>

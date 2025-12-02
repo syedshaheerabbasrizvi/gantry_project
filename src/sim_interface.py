@@ -27,6 +27,42 @@ class GantrySim:
         self.grasp_constraint = None
         self.dt = 1.0/240.0
 
+        num_joints = p.getNumJoints(self.robot_id)
+        for i in range(num_joints):
+            print(i, p.getJointInfo(self.robot_id, i)[1])
+
+
+    # getting feed fron any link at the moment
+    def _render_camera_from_link(self, link_index, width=240, height=240,
+                                 fov=90.0, near=0.1, far=5.0):
+        # Get link pose
+        state = p.getLinkState(self.robot_id, link_index)
+        cam_pos, cam_orn = state[0], state[1]
+
+        # Rotation matrix
+        rot = p.getMatrixFromQuaternion(cam_orn)
+
+        # Assume local -Z is camera forward, +Y is up
+        forward = [-rot[2], -rot[5], -rot[8]]
+        up_vec  = [ rot[1],  rot[4],  rot[7]]
+
+        cam_target = [
+            cam_pos[0] + forward[0],
+            cam_pos[1] + forward[1],
+            cam_pos[2] + forward[2],
+        ]
+
+        view_mat = p.computeViewMatrix(cam_pos, cam_target, up_vec)
+        proj_mat = p.computeProjectionMatrixFOV(fov, width / float(height), near, far)
+
+        w, h, rgba, _, _ = p.getCameraImage(
+            width, height, view_mat, proj_mat,
+            renderer=p.ER_BULLET_HARDWARE_OPENGL
+        )
+
+        img = np.reshape(np.array(rgba), (h, w, 4)).astype(np.uint8)[:, :, :3].copy()
+        return img
+
     def _create_env(self):
         # Load Plane (Uses built-in pybullet_data)
         p.loadURDF("plane.urdf")
@@ -61,7 +97,7 @@ class GantrySim:
         self.robot_id = p.loadURDF(path, [0, 0, self.robot_base_z], useFixedBase=True)
 
     def _spawn_box(self):
-        box_dims = [0.15, 0.15, 0.15]
+        box_dims = [0.15, 0.25, 0.15]
         box_z = self.belt_surface_z + 0.15
         vis = p.createVisualShape(p.GEOM_BOX, halfExtents=box_dims, rgbaColor=[0.1, 0.1, 0.1, 1])
         col = p.createCollisionShape(p.GEOM_BOX, halfExtents=box_dims)
@@ -125,17 +161,37 @@ class GantrySim:
 
     def get_data(self):
         # Camera
-        ee_state = p.getLinkState(self.robot_id, 3)
-        cam_pos, cam_orn = ee_state[0], ee_state[1]
-        rot_matrix = p.getMatrixFromQuaternion(cam_orn)
-        up_vec = [rot_matrix[1], rot_matrix[4], rot_matrix[7]] 
+        # ee_state = p.getLinkState(self.robot_id, 3)
+        # cam_pos, cam_orn = ee_state[0], ee_state[1]
+        # rot_matrix = p.getMatrixFromQuaternion(cam_orn)
+        # up_vec = [rot_matrix[1], rot_matrix[4], rot_matrix[7]] 
         
-        view_mat = p.computeViewMatrix(cam_pos, [cam_pos[0], cam_pos[1], 0], up_vec)
-        proj_mat = p.computeProjectionMatrixFOV(60, 1.0, 0.1, 4.0)
-        w, h, rgb, _, _ = p.getCameraImage(240, 240, view_mat, proj_mat, renderer=p.ER_BULLET_HARDWARE_OPENGL)
+        # view_mat = p.computeViewMatrix(cam_pos, [cam_pos[0], cam_pos[1], 0], up_vec)
+        # proj_mat = p.computeProjectionMatrixFOV(60, 1.0, 0.1, 4.0)
+        # w, h, rgb, _, _ = p.getCameraImage(240, 240, view_mat, proj_mat, renderer=p.ER_BULLET_HARDWARE_OPENGL)
+
+        # Wrist camera (close-up, good for controller)
+        wrist_img = self._render_camera_from_link(
+            link_index=6,    # wrist_cam_fixed -> wrist_cam link
+            width=240,
+            height=240,
+            fov=60.0,
+            near=0.05,
+            far=4.0
+        )
+
+        # Bridge (top) camera (overview)
+        top_img = self._render_camera_from_link(
+            link_index=7,    # bridge_cam_fixed -> bridge_cam link (adjust if different)
+            width=320,
+            height=320,
+            fov=45.0,        # narrower FOV -> more zoomed
+            near=0.1,
+            far=8.0
+        )
         
         # Use .copy() to prevent OpenCV errors
-        img = np.reshape(np.array(rgb), (240, 240, 4)).astype(np.uint8)[:, :, :3].copy()
+        # img = np.reshape(np.array(rgb), (240, 240, 4)).astype(np.uint8)[:, :, :3].copy()
         
         # Joints
         joints = [p.getJointState(self.robot_id, i)[0] for i in range(4)]
@@ -145,4 +201,4 @@ class GantrySim:
         box_yaw = p.getEulerFromQuaternion(box_orn)[2]
         cheat_data = {'box_x': box_pos[0], 'box_y': box_pos[1], 'box_yaw': box_yaw}
         
-        return img, joints, cheat_data
+        return wrist_img, top_img, joints, cheat_data
