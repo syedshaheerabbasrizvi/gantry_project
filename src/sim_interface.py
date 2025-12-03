@@ -180,6 +180,11 @@ class GantrySim:
             far=4.0
         )
 
+
+        # ALSO get its pose for projection
+        wrist_state = p.getLinkState(self.robot_id, 6)
+        cam_pos, cam_orn = wrist_state[0], wrist_state[1]
+
         # Bridge (top) camera (overview)
         top_img = self._render_camera_from_link(
             link_index=7,    # bridge_cam_fixed -> bridge_cam link (adjust if different)
@@ -201,4 +206,4 @@ class GantrySim:
         box_yaw = p.getEulerFromQuaternion(box_orn)[2]
         cheat_data = {'box_x': box_pos[0], 'box_y': box_pos[1], 'box_yaw': box_yaw}
         
-        return wrist_img, top_img, joints, cheat_data
+        return wrist_img, top_img, joints, cheat_data, cam_pos, cam_orn

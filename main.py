@@ -24,15 +24,15 @@ def main():
         while True:
             loop_start = time.perf_counter()
              # --- SENSE ---
-            wrist_img, top_img, joints, cheat_data = sim.get_data()
+            wrist_img, top_img, joints, cheat_data, cam_pos, cam_orn  = sim.get_data()
             
             # test code for vision testing
             processed_image = vision.process_vision(wrist_img)
 
-             # --- PLAN ---
-            vel_cmd, grip_cmd = brain.update(wrist_img, joints, cheat_data)
+            # --- PLAN ---
+            vel_cmd, grip_cmd = brain.update(wrist_img, joints, cheat_data, cam_pos, cam_orn)
              
-             # --- ACT ---
+            # --- ACT ---
             sim.step(vel_cmd, grip_cmd)
              
             # --- VISUALIZE ---

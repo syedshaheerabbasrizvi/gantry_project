@@ -5,3 +5,4 @@ __pycache__/
 .vscode/
 .idea/
 gantry/
+../vision_vs_cheat_log.csv

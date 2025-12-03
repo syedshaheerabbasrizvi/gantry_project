@@ -5,6 +5,8 @@ from src.vision import VisionPipeline
 from src.vision2 import VisionPipeline as VisionPipeline2 #this is using minRect method
 import cv2
 
+import pybullet as p
+
 
 class GantryController:
     def __init__(self):
@@ -26,6 +28,8 @@ class GantryController:
         self.vision = VisionPipeline()
         self.vision2 = VisionPipeline2()
         self.counter = 0
+        
+        self.box_plane_z = 0.2 + 0.15  # belt_h + box_height/2  = 0.35
 
         # CSV file for logging
         self.log_file = "vision_vs_cheat_log.csv"
@@ -40,48 +44,154 @@ class GantryController:
                     "vision_cx", "vision_cy", "vision_yaw"
                 ])
     
-    def process_vision(self, img, cheat_data):
+
+    def pixel_to_world_on_plane(self, u, v, cam_pos, cam_orn,
+                                img_w=240, img_h=240, fov_deg=60.0):
         """
-        Compare cheat data vs vision output and save to CSV.
+        Map image pixel (u, v) from the wrist camera to a world (X, Y)
+        by casting a ray from the camera and intersecting with plane z = box_plane_z.
         """
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)    
+        
+        print("Mapping pixel to world coordinates...")
+
+        cam_pos = np.array(cam_pos, dtype=np.float64)
+
+        # --- 1. Camera intrinsics from FOV ---
+        aspect = img_w / float(img_h)
+        f_y = (img_h / 2.0) / np.tan(np.deg2rad(fov_deg) / 2.0)
+        f_x = f_y * aspect
+        c_x = img_w / 2.0
+        c_y = img_h / 2.0
+
+        # Pixel -> normalized camera coords
+        x_cam = (u - c_x) / f_x
+        y_cam = -(v - c_y) / f_y   # minus: image y down, camera y up
+
+        # --- 2. Camera orientation: basis vectors in WORLD frame ---
+        rot = p.getMatrixFromQuaternion(cam_orn)
+        rot = np.array(rot).reshape(3, 3)
+
+        # In _render_camera_from_link, you used:
+        # forward = [-rot[2], -rot[5], -rot[8]]
+        # up      = [ rot[1],  rot[4],  rot[7]]
+        forward = np.array([-rot[0,2], -rot[1,2], -rot[2,2]], dtype=np.float64)
+        up      = np.array([ rot[0,1],  rot[1,1],  rot[2,1]], dtype=np.float64)
+        forward /= np.linalg.norm(forward)
+        up      /= np.linalg.norm(up)
+        right   = np.cross(forward, up)
+        right   /= np.linalg.norm(right)
+
+        # --- 3. Ray direction in WORLD frame ---
+        dir_world = x_cam * right + y_cam * up + 1.0 * forward
+        dir_world /= np.linalg.norm(dir_world)
+
+        # --- 4. Intersect ray with horizontal plane z = box_plane_z ---
+        z_plane = self.box_plane_z
+        t = (z_plane - cam_pos[2]) / dir_world[2]
+        P = cam_pos + t * dir_world  # intersection point
+
+        X_world, Y_world = float(P[0]), float(P[1])
+        return X_world, Y_world
+    
+    def process_vision(self, img, cheat_data, cam_pos, cam_orn):
+        """
+        Use vision to estimate box pose, convert to world frame, 
+        and still log comparison with cheat data.
+        """
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
         self.counter += 1
         frame_id = self.counter
         print(f"Processing vision frame #: {frame_id}")
 
-        # --- Vision processing ---
         rot_deg, cx, cy = self.vision2.process_vision(img)
 
-        if rot_deg is not None:
+        rot_rad = None
+        X_world = None
+        Y_world = None
+
+        if rot_deg is not None and cx is not None and cy is not None:
             rot_rad = (rot_deg * np.pi) / 180.0
-            print("Feature Vector from Vision:",
-                {"yaw(rad)": rot_rad, "cx": cx, "cy": cy})
+            print("Feature Vector from Vision (image frame):",
+                  {"yaw_img(rad)": rot_rad, "cx": cx, "cy": cy})
+
+            # --- NEW: image → world ---
+            X_world, Y_world = self.pixel_to_world_on_plane(
+                cx, cy, cam_pos, cam_orn,
+                img_w=img.shape[1], img_h=img.shape[0], fov_deg=60.0
+            )
+
+            # For now, use vision yaw directly as world yaw (we can add an offset later if needed)
+            yaw_world = rot_rad
+
+            print("Vision mapped to world frame:",
+                  {"X_world": X_world, "Y_world": Y_world, "yaw_world": yaw_world})
         else:
-            rot_rad, cx, cy = None, None, None
             print("Vision failed to detect object.")
 
-
-        # --- Cheat data from simulation ---
+        # Cheat data for logging
         cheat_x = cheat_data['box_x']
         cheat_y = cheat_data['box_y']
-        cheat_yaw = cheat_data['box_yaw']    # Already in radians
+        cheat_yaw = cheat_data['box_yaw']
 
-        print(f"Cheat data: x={cheat_x}, y={cheat_y}, yaw={cheat_yaw}")
-
-
-        # --- LOG BOTH TO CSV ---
+        # log both
         with open(self.log_file, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([
                 frame_id,
                 cheat_x, cheat_y, cheat_yaw,
-                cx, cy, rot_rad
+                X_world, Y_world, rot_rad
             ])
 
-
-        # --- Return cheat data as before ---
+        # If vision succeeded, use it; otherwise fall back to cheat data
+        # if X_world is not None:
+        #     return X_world, Y_world, yaw_world
+        # else:
         return cheat_x, cheat_y, cheat_yaw
+
+    # def process_vision(self, img, cheat_data):
+    #     """
+    #     Compare cheat data vs vision output and save to CSV.
+    #     """
+    #     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)    
+
+    #     self.counter += 1
+    #     frame_id = self.counter
+    #     print(f"Processing vision frame #: {frame_id}")
+
+    #     # --- Vision processing ---
+    #     rot_deg, cx, cy = self.vision2.process_vision(img)
+
+    #     if rot_deg is not None:
+    #         rot_rad = (rot_deg * np.pi) / 180.0
+    #         print("Feature Vector from Vision:",
+    #             {"yaw(rad)": rot_rad, "cx": cx, "cy": cy})
+    #     else:
+    #         rot_rad, cx, cy = None, None, None
+    #         print("Vision failed to detect object.")
+
+
+    #     # --- Cheat data from simulation ---
+    #     cheat_x = cheat_data['box_x']
+    #      
+    #     cheat_y = cheat_data['box_y']
+    #     cheat_yaw = cheat_data['box_yaw']    # Already in radians
+
+    #     print(f"Cheat data: x={cheat_x}, y={cheat_y}, yaw={cheat_yaw}")
+
+
+    #     # --- LOG BOTH TO CSV ---
+    #     with open(self.log_file, "a", newline="") as f:
+    #         writer = csv.writer(f)
+    #         writer.writerow([
+    #             frame_id,
+    #             cheat_x, cheat_y, cheat_yaw,
+    #             cx, cy, rot_rad
+    #         ])
+
+
+    #     # --- Return cheat data as before ---
+    #     return cheat_x, cheat_y, cheat_yaw
 
     # def process_vision(self, img, cheat_data):
     #     """
@@ -111,7 +221,7 @@ class GantryController:
     #     return cheat_data['box_x'], cheat_data['box_y'], cheat_data['box_yaw']
         # return cx, cy, rot*np.pi/180 if rot is not None else None
 
-    def update(self, img, joints, cheat_data):
+    def update(self, img, joints, cheat_data,  cam_pos, cam_orn):
         """
         Inputs: 
             img: Camera image
@@ -122,7 +232,7 @@ class GantryController:
             gripper_cmd: "OPEN" or "CLOSE"
         """
         # 1. Perception
-        box_x, box_y, box_yaw = self.process_vision(img, cheat_data)
+        box_x, box_y, box_yaw = self.process_vision(img, cheat_data, cam_pos, cam_orn)
         print(f">> VISION OUTPUTS: box_x={box_x}, box_y={box_y}, box_yaw={box_yaw}")
 
         j_y, j_x, j_z, j_yaw = joints
