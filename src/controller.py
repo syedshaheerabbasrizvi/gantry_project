@@ -19,7 +19,7 @@ class GantryController:
         
         # GAINS (PD Control)
         self.kp = 7.5      # Gas Pedal
-        self.kd = 0.5       # Brake Pedal (Shock Absorber)
+        self.kd = 1.0       # Brake Pedal (Shock Absorber)
         
         self.kp_rot = 5.0
         self.kd_rot = 0.2

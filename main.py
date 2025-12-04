@@ -17,12 +17,15 @@ def main():
     # --- DATA RECORDER SETUP ---
     history = {
         'time': [],
-        'robot_x': [],
-        'target_x': [],
-        'error_x': [],
-        'cmd_vel_x': []
+        'robot_x': [], 'target_x': [],
+        'robot_y': [], 'target_y': [],
+        'robot_z': [], 
+        'robot_yaw': [], 'target_yaw': []
     }
+    
     start_time = time.time()
+    last_print = time.time()
+    print_interval = 0.5 # Seconds
     
     while True:
         # --- SENSE ---
@@ -34,26 +37,52 @@ def main():
         # --- ACT ---
         sim.step(vel_cmd, grip_cmd)
         
+        # --- PRINT PIXEL COORDINATES (Heartbeat) ---
+        if time.time() - last_print > print_interval:
+            print(f"[{time.time()-start_time:.1f}s] CAM PIXELS | "
+                  f"MW: ({cheat_data['mw_u']:3d}, {cheat_data['mw_v']:3d}) | "
+                  f"BOX: ({cheat_data['box_u']:3d}, {cheat_data['box_v']:3d})")
+            last_print = time.time()
+
         # --- RECORD DATA ---
-        # Only record if we are properly initialized (avoid initial 0.0 glitches)
         current_time = time.time() - start_time
         
-        # Identify Target (MW or Box depending on state)
-        # This helps the graph make sense during different phases
-        if brain.state in ["APPROACH_BOX", "INSERT"]:
-            target_x = cheat_data['box_x']
+        # Identify Target based on State for plotting context
+        if brain.state in ["APPROACH_BOX", "INSERT", "RELEASE_IN_BOX", "CLEAR_BOX"]:
+            t_x = cheat_data['box_x']
+            t_y = cheat_data['box_y']
+            t_yaw = cheat_data['box_yaw']
         else:
-            target_x = cheat_data['mw_x']
+            t_x = cheat_data['mw_x']
+            t_y = cheat_data['mw_y']
+            t_yaw = cheat_data['mw_yaw']
 
-        j_x = joints[0] # Assuming Joint 0 is X
+        # Robot State (Joints: y, x, z, yaw -> careful with mapping!)
+        # Check your controller mapping. Usually: joints[0]=X or Y? 
+        # In Sim: joints = [p.getJointState...]. 
+        # URDF Joint 0=Slider_X, 1=Slider_Y, 2=Slider_Z, 3=Yaw
+        # Let's map explicitly based on your Sim/Controller logic:
+        # Sim returns joints list: [j0, j1, j2, j3]
+        j_x, j_y, j_z, j_yaw = joints
         
         history['time'].append(current_time)
-        history['robot_x'].append(j_x)
-        history['target_x'].append(target_x)
-        history['error_x'].append(target_x - j_x)
-        history['cmd_vel_x'].append(vel_cmd[0])
+        history['robot_x'].append(j_x); history['target_x'].append(t_x)
+        history['robot_y'].append(j_y); history['target_y'].append(t_y)
+        history['robot_z'].append(j_z) # Z target is internal logic, mostly just want to see robot Z
+        history['robot_yaw'].append(j_yaw); history['target_yaw'].append(t_yaw)
         
         # --- VISUALIZE ---
+        # Draw crosshair at center
+        h, w = img.shape[:2]
+        cv2.line(img, (w//2, h//2-10), (w//2, h//2+10), (0,255,0), 1)
+        cv2.line(img, (w//2-10, h//2), (w//2+10, h//2), (0,255,0), 1)
+        
+        # Draw target pixel (Just for debug visual)
+        if brain.state in ["APPROACH_BOX", "INSERT"]:
+            cv2.circle(img, (cheat_data['box_u'], cheat_data['box_v']), 5, (0, 0, 255), 2)
+        elif brain.state in ["TRACKING", "DESCEND", "GRASP"]:
+            cv2.circle(img, (cheat_data['mw_u'], cheat_data['mw_v']), 5, (255, 0, 0), 2)
+
         cv2.imshow("Robot Camera", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
         
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -68,34 +97,41 @@ def main():
 def plot_data(history):
     t = history['time']
     
-    # Create a figure with 3 subplots
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+    # Create 2x2 grid
+    fig, axs = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
     
-    # Plot 1: Position Tracking
-    ax1.plot(t, history['target_x'], 'r--', label='Target (MW/Box)')
-    ax1.plot(t, history['robot_x'], 'b-', label='Robot X')
-    ax1.set_ylabel('Position (m)')
-    ax1.set_title('X-Axis Tracking Performance')
-    ax1.legend()
-    ax1.grid(True)
+    # 1. X-Axis (Tracking)
+    axs[0, 0].plot(t, history['target_x'], 'r--', label='Target')
+    axs[0, 0].plot(t, history['robot_x'], 'b-', label='Robot X')
+    axs[0, 0].set_title('X-Axis (Conveyor Tracking)')
+    axs[0, 0].set_ylabel('Position (m)')
+    axs[0, 0].legend()
+    axs[0, 0].grid(True)
+
+    # 2. Y-Axis (Alignment)
+    axs[0, 1].plot(t, history['target_y'], 'r--', label='Target')
+    axs[0, 1].plot(t, history['robot_y'], 'g-', label='Robot Y')
+    axs[0, 1].set_title('Y-Axis (Cross-Track)')
+    axs[0, 1].set_ylabel('Position (m)')
+    axs[0, 1].grid(True)
     
-    # Plot 2: Tracking Error
-    ax2.plot(t, history['error_x'], 'k-', label='Error (Target - Robot)')
-    # Draw the "Good Tracking" zone (+/- 2cm)
-    ax2.axhline(y=0.02, color='g', linestyle=':', alpha=0.5)
-    ax2.axhline(y=-0.02, color='g', linestyle=':', alpha=0.5)
-    ax2.set_ylabel('Error (m)')
-    ax2.set_title('Tracking Error')
-    ax2.legend()
-    ax2.grid(True)
-    
-    # Plot 3: Velocity Commands (Shows the Ramping)
-    ax3.plot(t, history['cmd_vel_x'], 'm-', label='Cmd Vel X')
-    ax3.set_ylabel('Velocity (m/s)')
-    ax3.set_xlabel('Time (s)')
-    ax3.set_title('Velocity Profile (Ramped)')
-    ax3.legend()
-    ax3.grid(True)
+    # 3. Z-Axis (Vertical Profile)
+    axs[1, 0].plot(t, history['robot_z'], 'k-', label='Robot Z')
+    axs[1, 0].set_title('Z-Axis (Height Profile)')
+    axs[1, 0].set_ylabel('Height (m)')
+    axs[1, 0].set_xlabel('Time (s)')
+    axs[1, 0].grid(True)
+    # Add reference lines for pickup/drop heights if useful
+    axs[1, 0].axhline(y=-0.2, color='gray', linestyle=':', alpha=0.5, label='Pickup')
+    axs[1, 0].legend()
+
+    # 4. Yaw (Rotation)
+    axs[1, 1].plot(t, history['target_yaw'], 'r--', label='Target')
+    axs[1, 1].plot(t, history['robot_yaw'], 'm-', label='Robot Yaw')
+    axs[1, 1].set_title('Yaw (Orientation)')
+    axs[1, 1].set_ylabel('Angle (rad)')
+    axs[1, 1].set_xlabel('Time (s)')
+    axs[1, 1].grid(True)
     
     plt.tight_layout()
     plt.show()

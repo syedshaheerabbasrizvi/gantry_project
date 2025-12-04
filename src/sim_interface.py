@@ -16,7 +16,9 @@ class GantrySim:
         # CRITICAL: This line finds plane.urdf in the installed library
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setGravity(0, 0, -9.8)
-        
+        # if render:
+        #     p.startStateLogging(p.STATE_LOGGING_VIDEO_MP4, "output.mp4") 
+
         # 2. Build World
         self._create_env()
         self._spawn_robot()
@@ -197,8 +199,39 @@ class GantrySim:
             
             print(f">> SIM: Cycle Reset")
 
+    def _project_point(self, point_3d, view_mat, proj_mat, width, height):
+        """
+        Projects a 3D world point (x,y,z) into 2D pixel coordinates (u,v).
+        """
+        # 1. View Transform (World -> Camera)
+        # PyBullet matrices are flat column-major lists. Reshape carefully.
+        vm = np.array(view_mat).reshape((4, 4), order='F')
+        pm = np.array(proj_mat).reshape((4, 4), order='F')
+        
+        # Homogeneous Coordinates [x, y, z, 1]
+        vec = np.array([point_3d[0], point_3d[1], point_3d[2], 1.0])
+        
+        # Camera Space
+        cam_pos = np.dot(vm, vec)
+        
+        # 2. Projection Transform (Camera -> Clip)
+        clip_pos = np.dot(pm, cam_pos)
+        
+        # 3. Perspective Divide (Clip -> NDC)
+        # Avoid divide by zero
+        if clip_pos[3] == 0: return 0, 0
+        ndc = clip_pos[:3] / clip_pos[3]
+        
+        # 4. Viewport Transform (NDC -> Pixels)
+        # NDC x,y range is [-1, 1]. Map to [0, width] and [0, height]
+        # Note: Image Y axis is usually inverted (top-down) vs OpenGL (bottom-up)
+        u = (ndc[0] + 1) * (width / 2)
+        v = (1 - ndc[1]) * (height / 2)
+        
+        return int(u), int(v)
+
     def get_data(self):
-        # Camera
+        # --- Camera Setup (Existing) ---
         ee_state = p.getLinkState(self.robot_id, 3)
         cam_pos, cam_orn = ee_state[0], ee_state[1]
         rot_matrix = p.getMatrixFromQuaternion(cam_orn)
@@ -208,23 +241,30 @@ class GantrySim:
         proj_mat = p.computeProjectionMatrixFOV(60, 1.0, 0.1, 4.0)
         w, h, rgb, _, _ = p.getCameraImage(240, 240, view_mat, proj_mat, renderer=p.ER_BULLET_HARDWARE_OPENGL)
         
-        # Use .copy() to prevent OpenCV errors
         img = np.reshape(np.array(rgb), (240, 240, 4)).astype(np.uint8)[:, :, :3].copy()
         
-        # Joints
+        # --- Joints (Existing) ---
         joints = [p.getJointState(self.robot_id, i)[0] for i in range(4)]
         
-        # Cheat Data
+        # --- Data Extraction (Modified) ---
         mw_pos, mw_orn = p.getBasePositionAndOrientation(self.mw_id)
         mw_yaw = p.getEulerFromQuaternion(mw_orn)[2]
         
-        # ADDED: Box Data
         box_pos, box_orn = p.getBasePositionAndOrientation(self.box_id)
         box_yaw = p.getEulerFromQuaternion(box_orn)[2]
         
+        # NEW: Project 3D positions to 2D Pixels
+        mw_u, mw_v = self._project_point(mw_pos, view_mat, proj_mat, 240, 240)
+        box_u, box_v = self._project_point(box_pos, view_mat, proj_mat, 240, 240)
+        
         cheat_data = {
+            # World Data (Legacy/Debug)
             'mw_x': mw_pos[0], 'mw_y': mw_pos[1], 'mw_yaw': mw_yaw,
-            'box_x': box_pos[0], 'box_y': box_pos[1], 'box_yaw': box_yaw
+            'box_x': box_pos[0], 'box_y': box_pos[1], 'box_yaw': box_yaw,
+            
+            # Pixel Data (The "Virtual Eye")
+            'mw_u': mw_u, 'mw_v': mw_v,
+            'box_u': box_u, 'box_v': box_v
         }
         
         return img, joints, cheat_data
