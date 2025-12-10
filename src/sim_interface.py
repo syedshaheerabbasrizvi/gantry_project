@@ -231,38 +231,42 @@ class GantrySim:
         return int(u), int(v)
 
     def get_data(self):
-        # --- Camera Setup (Existing) ---
+        # --- Camera Setup ---
+        # 1. Get Position from Link 3 (End Effector) to track X/Y/Z movement
         ee_state = p.getLinkState(self.robot_id, 3)
-        cam_pos, cam_orn = ee_state[0], ee_state[1]
-        rot_matrix = p.getMatrixFromQuaternion(cam_orn)
-        up_vec = [rot_matrix[1], rot_matrix[4], rot_matrix[7]] 
+        cam_pos = ee_state[0]
         
-        view_mat = p.computeViewMatrix(cam_pos, [cam_pos[0], cam_pos[1], 0], up_vec)
+        # 2. FIXED: Force "Up Vector" to World Y [0, 1, 0].
+        # This keeps the camera view locked to the grid, regardless of gripper Yaw.
+        # [0, 1, 0] aligns Image Up with World Y.
+        view_mat = p.computeViewMatrix(
+            cameraEyePosition=cam_pos,
+            cameraTargetPosition=[cam_pos[0], cam_pos[1], 0],
+            cameraUpVector=[0, 1, 0] 
+        )
+        
         proj_mat = p.computeProjectionMatrixFOV(60, 1.0, 0.1, 4.0)
         w, h, rgb, _, _ = p.getCameraImage(240, 240, view_mat, proj_mat, renderer=p.ER_BULLET_HARDWARE_OPENGL)
         
         img = np.reshape(np.array(rgb), (240, 240, 4)).astype(np.uint8)[:, :, :3].copy()
         
-        # --- Joints (Existing) ---
+        # --- Joints ---
         joints = [p.getJointState(self.robot_id, i)[0] for i in range(4)]
         
-        # --- Data Extraction (Modified) ---
+        # --- Cheat Data & Projections ---
+        # (Same as before, but re-calculating projections is safer with new view_mat)
         mw_pos, mw_orn = p.getBasePositionAndOrientation(self.mw_id)
         mw_yaw = p.getEulerFromQuaternion(mw_orn)[2]
         
         box_pos, box_orn = p.getBasePositionAndOrientation(self.box_id)
         box_yaw = p.getEulerFromQuaternion(box_orn)[2]
         
-        # NEW: Project 3D positions to 2D Pixels
         mw_u, mw_v = self._project_point(mw_pos, view_mat, proj_mat, 240, 240)
         box_u, box_v = self._project_point(box_pos, view_mat, proj_mat, 240, 240)
         
         cheat_data = {
-            # World Data (Legacy/Debug)
             'mw_x': mw_pos[0], 'mw_y': mw_pos[1], 'mw_yaw': mw_yaw,
             'box_x': box_pos[0], 'box_y': box_pos[1], 'box_yaw': box_yaw,
-            
-            # Pixel Data (The "Virtual Eye")
             'mw_u': mw_u, 'mw_v': mw_v,
             'box_u': box_u, 'box_v': box_v
         }

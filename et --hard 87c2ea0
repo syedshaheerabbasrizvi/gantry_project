@@ -1,0 +1,29 @@
+[33mcommit 398d7c91215a650d8b6d0c5f25a26f29a55754c9[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcontrol-dev[m[33m, [m[1;31morigin/control-dev[m[33m)[m
+Author: Shaheer Abbas <afsagag1@gmail.com>
+Date:   Tue Dec 2 02:05:11 2025 +0500
+
+    PD controller, S motion profiling, other minor improvements
+
+[33mcommit 16e793cea6fd541b55645720058e731f74822be1[m
+Author: Shaheer Abbas <afsagag1@gmail.com>
+Date:   Tue Dec 2 01:02:59 2025 +0500
+
+    Packaging process
+
+[33mcommit 82fc52db4f63236846663d0496d49b956adfd50b[m
+Author: Shaheer Abbas <afsagag1@gmail.com>
+Date:   Mon Dec 1 17:23:40 2025 +0500
+
+    Renamed instances of box to microwave
+
+[33mcommit 8f85ae8f9c593d7e9ab92331a76d34d9961e1299[m
+Author: Shaheer Abbas <afsagag1@gmail.com>
+Date:   Mon Dec 1 17:17:29 2025 +0500
+
+    Fixed swapped x and y axes
+
+[33mcommit bb7007a35ee3cfe3adec24d27c8d0a8082632e97[m[33m ([m[1;31morigin/main[m[33m, [m[1;32mmain[m[33m)[m
+Author: Shaheer Abbas <afsagag1@gmail.com>
+Date:   Fri Nov 21 14:35:47 2025 +0500
+
+    Initial commit: Gantry sim architecture
